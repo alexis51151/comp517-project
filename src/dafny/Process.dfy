@@ -9,6 +9,5 @@ class Process {
     }
 
     method exec() modifies this, endokernel {
-        this.endokernel.trap("");
     }
 }
