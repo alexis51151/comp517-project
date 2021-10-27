@@ -9,7 +9,7 @@ class Endokernel {
     var kernel:Kernel;
 
     method createEndoprocess(capability:Capability, instruction:string) returns (endoprocess:Endoprocess) modifies this {
-        endoprocess := new Endoprocess(this.nextPid, capability.subspace, instruction, this);
+        endoprocess := new Endoprocess();
         this.capabilities := capabilities[capability := endoprocess];
         this.endoprocesses := this.endoprocesses[this.nextPid := endoprocess];
         this.nextPid := nextPid + 1;
@@ -28,7 +28,6 @@ class Endokernel {
                 endoprocess := capabilities[capability];
             }
             print "Trapping instruction " + instruction + " from Process in Endokernel\n";
-            endoprocess.exec(instruction);
         }
     }
 
@@ -73,19 +72,7 @@ class Endokernel {
 
 class Endoprocess {
     var id:int;
-    var memorySpace:seq<int>
-    var instructions: string
-    var endokernel:Endokernel;
-
-    constructor(id:int, memorySpace:seq<int>, instructions:string, endokernel:Endokernel) {
-        this.id := id;
-        this.memorySpace := memorySpace;
-        this.instructions := instructions;
-        this.endokernel := endokernel;
-    }
-
-    method exec(instruction:string)  {
-        print "Executing instruction " + instruction + " in Endoprocess\n";
-        endokernel.trapEndoprocess(instruction, this.id);
+    constructor(){
+        this.id := 1;
     }
 }
