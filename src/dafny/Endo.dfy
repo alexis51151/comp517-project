@@ -1,12 +1,11 @@
-include "Capability.dfy"
 
 class Endokernel {
-    var capabilities: map<Capability, Endoprocess>
+    var capabilities: map<string, Endoprocess>
     var endoprocesses: map<int, Endoprocess>
-    var instructionMap: map<string, Capability>
+    var instructionMap: map<string, string>
     var nextPid:int;
 
-    method createEndoprocess(capability:Capability, instruction:string) returns (endoprocess:Endoprocess) modifies this {
+    method createEndoprocess(capability:string, instruction:string) returns (endoprocess:Endoprocess) modifies this {
         endoprocess := new Endoprocess();
         this.capabilities := capabilities[capability := endoprocess];
         this.endoprocesses := this.endoprocesses[this.nextPid := endoprocess];
@@ -18,7 +17,7 @@ class Endokernel {
            print "trap error: no policy for this instruction\n";
         } 
         else {
-            var capability:Capability := instructionMap[instruction];
+            var capability:string := instructionMap[instruction];
             var endoprocess:Endoprocess;
             if (capability !in capabilities) {
                 endoprocess := createEndoprocess(capability, instruction);
@@ -61,7 +60,7 @@ class Endokernel {
         this.nextPid := 0;
         this.capabilities := map[];
         this.endoprocesses := map[];
-        var capability:Capability := new Capability();
+        var capability:string := "";
         this.instructionMap := map["write(0,a)" := capability];
     }
 }
