@@ -1,5 +1,21 @@
-include "Process.dfy"
-include "Endo.dfy"
+class Endokernel {
+    method trap(instruction:string) modifies this  {}
+
+    constructor() {}
+}
+
+class Process {
+    var endokernel: Endokernel;
+
+    constructor(endokernel:Endokernel)
+    {
+        this.endokernel := endokernel;
+    }
+
+    method exec() modifies endokernel {
+        this.endokernel.trap("");
+    }
+}
 
 class Test {
 
