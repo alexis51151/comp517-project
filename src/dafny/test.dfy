@@ -8,6 +8,7 @@ class Process {
     var endokernel: Endokernel;
 
     constructor(endokernel:Endokernel)
+    ensures this.endokernel == old(endokernel)
     {
         this.endokernel := endokernel;
     }
