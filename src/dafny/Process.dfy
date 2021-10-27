@@ -8,7 +8,7 @@ class Process {
         this.endokernel := endokernel;
     }
 
-    method exec() modifies this, endokernel {
+    method exec() modifies endokernel {
         this.endokernel.trap("");
     }
 }

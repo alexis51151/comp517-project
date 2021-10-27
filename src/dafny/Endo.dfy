@@ -1,12 +1,10 @@
 include "Capability.dfy"
-include "Kernel.dfy"
 
 class Endokernel {
     var capabilities: map<Capability, Endoprocess>
     var endoprocesses: map<int, Endoprocess>
     var instructionMap: map<string, Capability>
     var nextPid:int;
-    var kernel:Kernel;
 
     method createEndoprocess(capability:Capability, instruction:string) returns (endoprocess:Endoprocess) modifies this {
         endoprocess := new Endoprocess();
@@ -52,7 +50,6 @@ class Endokernel {
                     }
                     else {
                         print "Trapping back instruction " + instruction + " from Endoprocess in Endokernel\n";
-                        kernel.exec(instruction);
                     }
                 }
             }
@@ -60,13 +57,12 @@ class Endokernel {
     }
 
 
-    constructor(kernel:Kernel) {
+    constructor() {
         this.nextPid := 0;
         this.capabilities := map[];
         this.endoprocesses := map[];
         var capability:Capability := new Capability();
         this.instructionMap := map["write(0,a)" := capability];
-        this.kernel := kernel;
     }
 }
 
