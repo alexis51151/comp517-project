@@ -7,9 +7,9 @@ class Endokernel {
     var capabilities: map<Capability, Endoprocess>
     var endoprocesses: map<int, Endoprocess>
     var instructionMap: map<Instruction, Capability>
+    var syscalls:map<Instruction, Syscall>
     var nextPid:int
     var kernel:Kernel
-    var syscalls:map<Instruction, Syscall>
 
 
     method createEndoprocess(capability:Capability, instruction:Instruction) returns (endoprocess:Endoprocess) modifies this 
@@ -22,6 +22,7 @@ class Endokernel {
     }
 
     method trap(instruction:Instruction) modifies this    
+            ensures instruction in instructionMap ==> instructionMap[instruction] in capabilities;
       { 
         if (instruction !in instructionMap){
            print "trap error: no policy for this instruction\n";

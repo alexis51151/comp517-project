@@ -56,9 +56,9 @@ class Endokernel {
   var capabilities: map<Capability, Endoprocess>
   var endoprocesses: map<int, Endoprocess>
   var instructionMap: map<Instruction, Capability>
+  var syscalls: map<Instruction, Syscall>
   var nextPid: int
   var kernel: Kernel
-  var syscalls: map<Instruction, Syscall>
 
   method createEndoprocess(capability: Capability, instruction: Instruction) returns (endoprocess: Endoprocess)
     modifies this
@@ -73,6 +73,7 @@ class Endokernel {
 
   method trap(instruction: Instruction)
     modifies this
+    ensures instruction in instructionMap ==> exists c: Capability :: c in capabilities
     decreases instruction
   {
     if instruction !in instructionMap {
@@ -1998,33 +1999,33 @@ namespace _module {
     }
     public void initProcess1()
     {
-      Kernel _71_kernel;
+      Kernel _73_kernel;
       Kernel _nw0 = new Kernel();
       _nw0.__ctor();
-      _71_kernel = _nw0;
-      Endokernel _72_endokernel;
+      _73_kernel = _nw0;
+      Endokernel _74_endokernel;
       Endokernel _nw1 = new Endokernel();
-      _nw1.__ctor(_71_kernel);
-      _72_endokernel = _nw1;
-      Instruction _73_instruction;
-      _73_instruction = @Instruction.create_Write('a', BigInteger.Zero);
-      Thread _74_thread;
+      _nw1.__ctor(_73_kernel);
+      _74_endokernel = _nw1;
+      Instruction _75_instruction;
+      _75_instruction = @Instruction.create_Write('a', BigInteger.Zero);
+      Thread _76_thread;
       Thread _nw2 = new Thread();
-      _nw2.__ctor(BigInteger.Zero, BigInteger.Zero, BigInteger.Zero, Dafny.Sequence<Instruction>.FromElements(_73_instruction), _72_endokernel);
-      _74_thread = _nw2;
-      Process _75_p;
+      _nw2.__ctor(BigInteger.Zero, BigInteger.Zero, BigInteger.Zero, Dafny.Sequence<Instruction>.FromElements(_75_instruction), _74_endokernel);
+      _76_thread = _nw2;
+      Process _77_p;
       Process _nw3 = new Process();
-      _nw3.__ctor(BigInteger.Zero, Dafny.Sequence<BigInteger>.FromElements(BigInteger.Zero, BigInteger.One, new BigInteger(2), new BigInteger(3)), _72_endokernel, _74_thread);
-      _75_p = _nw3;
-      (_75_p).exec();
+      _nw3.__ctor(BigInteger.Zero, Dafny.Sequence<BigInteger>.FromElements(BigInteger.Zero, BigInteger.One, new BigInteger(2), new BigInteger(3)), _74_endokernel, _76_thread);
+      _77_p = _nw3;
+      (_77_p).exec();
     }
     public void _Main()
     {
       (this).initProcess1();
     }
     public static void _StaticMain() {
-      Init _76_b = new Init();
-      _76_b._Main();
+      Init _78_b = new Init();
+      _78_b._Main();
     }
   }
 
@@ -2058,16 +2059,16 @@ namespace _module {
       this.capabilities = Dafny.Map<Capability, Endoprocess>.Empty;
       this.endoprocesses = Dafny.Map<BigInteger, Endoprocess>.Empty;
       this.instructionMap = Dafny.Map<Instruction, Capability>.Empty;
+      this.syscalls = Dafny.Map<Instruction, Syscall>.Empty;
       this.nextPid = BigInteger.Zero;
       this.kernel = default(Kernel);
-      this.syscalls = Dafny.Map<Instruction, Syscall>.Empty;
     }
     public Dafny.IMap<Capability,Endoprocess> capabilities;
     public Dafny.IMap<BigInteger,Endoprocess> endoprocesses;
     public Dafny.IMap<Instruction,Capability> instructionMap;
+    public Dafny.IMap<Instruction,Syscall> syscalls;
     public BigInteger nextPid;
     public Kernel kernel;
-    public Dafny.IMap<Instruction,Syscall> syscalls;
     public Endoprocess createEndoprocess(Capability capability, Instruction instruction)
     {
       Endoprocess endoprocess = default(Endoprocess);
@@ -2084,20 +2085,20 @@ namespace _module {
       if (!(this.instructionMap).Contains((instruction))) {
         Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("trap error: no policy for this instruction\n"));
       } else {
-        Capability _77_capability;
-        _77_capability = Dafny.Map<Instruction, Capability>.Select(this.instructionMap,instruction);
-        Endoprocess _78_endoprocess = default(Endoprocess);
-        if (!(this.capabilities).Contains((_77_capability))) {
+        Capability _79_capability;
+        _79_capability = Dafny.Map<Instruction, Capability>.Select(this.instructionMap,instruction);
+        Endoprocess _80_endoprocess = default(Endoprocess);
+        if (!(this.capabilities).Contains((_79_capability))) {
           Endoprocess _out0;
-          _out0 = (this).createEndoprocess(_77_capability, instruction);
-          _78_endoprocess = _out0;
+          _out0 = (this).createEndoprocess(_79_capability, instruction);
+          _80_endoprocess = _out0;
         } else {
-          _78_endoprocess = Dafny.Map<Capability, Endoprocess>.Select(this.capabilities,_77_capability);
+          _80_endoprocess = Dafny.Map<Capability, Endoprocess>.Select(this.capabilities,_79_capability);
         }
         Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("Trapping instruction "));
         Dafny.Helpers.Print(instruction);
         Dafny.Helpers.Print(Dafny.Sequence<char>.FromString(" from Process in Endokernel\n"));
-        (_78_endoprocess).exec(instruction);
+        (_80_endoprocess).exec(instruction);
       }
     }
     public void trapEndoprocess(Instruction instruction, BigInteger endoId)
@@ -2108,19 +2109,19 @@ namespace _module {
       if (!(this.instructionMap).Contains((instruction))) {
         Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("trapEndoprocess error: no policy for this instruction\n"));
       } else {
-        Capability _79_capability;
-        _79_capability = Dafny.Map<Instruction, Capability>.Select(this.instructionMap,instruction);
-        if (!(this.capabilities).Contains((_79_capability))) {
+        Capability _81_capability;
+        _81_capability = Dafny.Map<Instruction, Capability>.Select(this.instructionMap,instruction);
+        if (!(this.capabilities).Contains((_81_capability))) {
           Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("trapEndoprocess error: this endoprocess has not the required rights for such instruction\n"));
         } else {
-          Endoprocess _80_endoprocessExpected;
-          _80_endoprocessExpected = Dafny.Map<Capability, Endoprocess>.Select(this.capabilities,_79_capability);
+          Endoprocess _82_endoprocessExpected;
+          _82_endoprocessExpected = Dafny.Map<Capability, Endoprocess>.Select(this.capabilities,_81_capability);
           if (!(this.endoprocesses).Contains((endoId))) {
             Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("trapEndoprocess error: unknown endoprocess\n"));
           } else {
-            Endoprocess _81_endoprocessTrapped;
-            _81_endoprocessTrapped = Dafny.Map<BigInteger, Endoprocess>.Select(this.endoprocesses,endoId);
-            if ((_81_endoprocessTrapped) != (object) (_80_endoprocessExpected)) {
+            Endoprocess _83_endoprocessTrapped;
+            _83_endoprocessTrapped = Dafny.Map<BigInteger, Endoprocess>.Select(this.endoprocesses,endoId);
+            if ((_83_endoprocessTrapped) != (object) (_82_endoprocessExpected)) {
               Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("trapEndoprocess error: unknown endoprocess\n"));
             } else {
               if ((this.syscalls).Contains((instruction))) {
@@ -2138,13 +2139,13 @@ namespace _module {
       (this).nextPid = BigInteger.Zero;
       (this).capabilities = Dafny.Map<Capability, Endoprocess>.FromElements();
       (this).endoprocesses = Dafny.Map<BigInteger, Endoprocess>.FromElements();
-      Capability _82_capability;
+      Capability _84_capability;
       Capability _nw5 = new Capability();
       _nw5.__ctor();
-      _82_capability = _nw5;
-      Instruction _83_instruction;
-      _83_instruction = @Instruction.create_Write('a', BigInteger.Zero);
-      (this).instructionMap = Dafny.Map<Instruction, Capability>.FromElements(new Dafny.Pair<Instruction, Capability>(_83_instruction, _82_capability));
+      _84_capability = _nw5;
+      Instruction _85_instruction;
+      _85_instruction = @Instruction.create_Write('a', BigInteger.Zero);
+      (this).instructionMap = Dafny.Map<Instruction, Capability>.FromElements(new Dafny.Pair<Instruction, Capability>(_85_instruction, _84_capability));
       (this).kernel = kernel;
       (this).syscalls = Dafny.Map<Instruction, Syscall>.FromElements(new Dafny.Pair<Instruction, Syscall>(@Instruction.create_Write('a', BigInteger.Zero), @Syscall.create_Write('a', BigInteger.Zero)), new Dafny.Pair<Instruction, Syscall>(@Instruction.create_Read(BigInteger.Zero), @Syscall.create_Read(BigInteger.Zero)));
     }
