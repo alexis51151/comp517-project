@@ -44,10 +44,6 @@ class Endokernel {
     }
 
     method trapEndoprocess(instruction:Instruction, endoId:int) returns (ret:bool) 
-        requires instruction.addr >= 0;
-        // ensures isWriteInstruction(instruction) && instruction in instructionMap && instructionMap[instruction] in capabilities && endoId in endoprocesses
-        // && instruction in syscalls 
-        //  ==> ret == checkWrite(instruction.fd, instruction.addr, instruction.size, this.instructionMap, instruction)
     {
         ret := true;
         print "Trapping instruction ";
@@ -78,12 +74,9 @@ class Endokernel {
                     else {
  */                        if (instruction in syscalls) {
                             // Enforcing the instruction semantics
-                            // var ret := getImplementation(syscalls[instruction], instructionMap, instruction);
-                            if (isWriteInstruction(instruction)) {
-                                var ret := writeImplementation(instruction.fd, instruction.addr, instruction.size, instructionMap, instruction);
-                                if (ret) {
-                                    kernel.exec(syscalls[instruction]);
-                                } 
+                            var ret := getImplementation(syscalls[instruction], instructionMap, instruction);
+                            if (ret) {
+                                kernel.exec(syscalls[instruction]);
                             }
                         }
                         else {
@@ -97,27 +90,29 @@ class Endokernel {
     }
 
 
-    constructor(kernel:Kernel) {
+    constructor(kernel:Kernel) 
+    {
         this.nextPid := 0;
         this.capabilities := map[];
         this.endoprocesses := map[];
-        var capability:Capability := new Capability.setCapability((0,0), [0]);
-        var instruction:Instruction := Instruction.Write(0,0,2);
-        this.instructionMap := map[instruction := capability];
+        var capability:Capability := new Capability.setCapability({0}, [0]);
+        var instruction1:Instruction := Instruction.Write(0,0,2);
+        var instruction2:Instruction := Instruction.Read(0,0,2);
+        this.instructionMap := map[instruction1 := capability, instruction2 := capability];
         this.kernel := kernel;
         // Definition of the allowed syscalls and mapping between instructions and syscalls
         this.syscalls := map[Instruction.Write(0,0,2) := Syscall.Write(0,0,2),
-                             Instruction.Read(0) := Syscall.Read(0)];
+                             Instruction.Read(0,0,2) := Syscall.Read(0,0,2)];
     }
 }
 
 class Endoprocess {
     var id:int;
-    var memorySpace:(int, int)
+    var memorySpace:set<int>
     var instructions: Instruction
     var endokernel:Endokernel;
 
-    constructor(id:int, memorySpace:(int, int), instructions:Instruction, endokernel:Endokernel) {
+    constructor(id:int, memorySpace:set<int>, instructions:Instruction, endokernel:Endokernel) {
         this.id := id;
         this.memorySpace := memorySpace;
         this.instructions := instructions;

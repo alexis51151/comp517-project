@@ -3,55 +3,99 @@ include "Instructions.dfy"
 
 datatype Syscall = 
     Write(fd:int, addr:int, size:int) 
-    | Read(addr:int)
+    | Read(fd:int, addr:int, size:int)
 
 method getImplementation(sc:Syscall, instructionMap:map<Instruction, Capability>, instruction:Instruction) returns (ret:bool) 
+        ensures isWriteSyscall(sc) ==> ret == writeSpecification(sc.fd, sc.addr, sc.size, instructionMap, instruction);
+        ensures isReadSyscall(sc) ==> ret == readSpecification(sc.fd, sc.addr, sc.size, instructionMap, instruction);
     {
     match sc
-        case Write(fd, addr, size) => 
-        if (addr >= 0) {
-            ret := writeImplementation(fd, addr, size, instructionMap, instruction);
-        } else {
-            ret := false;
-        }
-        case Read(addr) => ret := false; 
+        case Write(fd, addr, size) => ret := writeImplementation(fd, addr, size, instructionMap, instruction);
+        case Read(fd, addr, size) => ret := readImplementation(fd, addr, size, instructionMap, instruction);
     }
 
-/* function method getSemantics(sc:Syscall, instructionMap:map<Instruction, Capability>, instruction:Instruction) : bool 
-    reads *;
-{
-    match sc
-        case Write(fd, addr, size) => if addr > 0 then checkWrite(fd, addr, size, instructionMap, instruction) else false
-        case Read(addr) => false
-}
-
- */
 predicate isWriteSyscall(sc:Syscall) {
     match sc 
         case Write(fd, addr, size) => true
-        case Read(addr) => false
+        case _ => false
+}
+
+predicate isReadSyscall(sc:Syscall) {
+    match sc 
+        case Read(fd, addr, size) => true
+        case _ => false
 }
 
 method writeImplementation(fd:int, addr:int, size:int, instructionMap:map<Instruction, Capability>, instruction:Instruction) returns (ret:bool)  
-    requires addr >= 0
+    ensures ret == writeSpecification(fd, addr, size, instructionMap, instruction)
     {
         ret := true;
         // Check if we can access the buffer memory
-        if (size < 0) {
+        if (size < 0 || addr < 0) {
             ret := false;
         }
-        if (instruction in instructionMap) {
-            var low := instructionMap[instruction].subspace.0;
-            var high := instructionMap[instruction].subspace.1;
-            if !(addr >= low && addr + size <= high ) {
+        else if (instruction !in instructionMap) {
+            ret := false;
+        } 
+        else {
+            var i := (set i | addr <= i <= addr + size);
+            if !(i * instructionMap[instruction].subspace == i) {
+                ret := false;
+            } 
+            // Check if we can access the file to write to
+            else if (fd !in instructionMap[instruction].files) {
                 ret := false;
             }
         }
-        // Check if we can access the file
-        if (instruction !in instructionMap || fd !in instructionMap[instruction].files) {
+    }
+
+method readImplementation(fd:int, addr:int, size:int, instructionMap:map<Instruction, Capability>, instruction:Instruction) returns (ret:bool)  
+    ensures ret == readSpecification(fd, addr, size, instructionMap, instruction)
+    {
+        ret := true;
+        // Check if we can access the buffer memory
+        if (size < 0 || addr < 0) {
             ret := false;
         }
+        else if (instruction !in instructionMap) {
+            ret := false;
+        } 
+        else {
+            var i := (set i | addr <= i <= addr + size);
+            if !(i * instructionMap[instruction].subspace == i) {
+                ret := false;
+            } 
+            // Check if we can access the file to write to
+            else if (fd !in instructionMap[instruction].files) {
+                ret := false;
+            }
+        }
     }
+
+function checkRangeSet(low:int, high:int, S:set<int>) : bool {
+    (set i | low <= i <= high) * S == (set i | low <= i <= high)
+}
+
+function writeSpecification(fd:int, addr:int, size:int, instructionMap:map<Instruction, Capability>, instruction:Instruction) : bool 
+    reads *
+{
+    if (size < 0 || addr < 0) then false 
+    else if instruction !in instructionMap then false
+    else if !checkRangeSet(addr, addr+size, instructionMap[instruction].subspace) then false
+    else if fd !in instructionMap[instruction].files then false
+    else true
+}
+
+function readSpecification(fd:int, addr:int, size:int, instructionMap:map<Instruction, Capability>, instruction:Instruction) : bool 
+    reads *
+{
+    if (size < 0 || addr < 0) then false 
+    else if instruction !in instructionMap then false
+    else if !checkRangeSet(addr, addr+size, instructionMap[instruction].subspace) then false
+    else if fd !in instructionMap[instruction].files then false
+    else true
+}
+
 
 
 // method writeImplementation(fd:int, addr:int, size:int, instructionMap:map<Instruction, Capability>, instruction:Instruction) returns (ret:bool)  

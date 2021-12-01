@@ -12,22 +12,22 @@ class Init {
         var endokernel:Endokernel := new Endokernel(kernel);
         var instruction:Instruction := Instruction.Write(0, 0, 2);
         var thread:Thread := new Thread(0, 0, 0, [instruction], endokernel);
-        var p:Process := new Process(0, (0,3), endokernel, thread);
+        var p:Process := new Process(0, {0,1,2,3}, endokernel, thread);
         p.exec();
     }
 
-/*     method initProcess2() {
-        // Example of a simple execution of the Endokernel abstraction that is not handled
+    method initProcess2() {
+        // Example of a simple execution of the Endokernel abstraction
         var kernel:Kernel := new Kernel();
         var endokernel:Endokernel := new Endokernel(kernel);
-        var instruction:string := "read(0,a)";
+        var instruction:Instruction := Instruction.Read(0, 0, 2);
         var thread:Thread := new Thread(0, 0, 0, [instruction], endokernel);
-        var p:Process := new Process(0, [0,1,2,3], endokernel, thread);
+        var p:Process := new Process(0, {0,1,2,3}, endokernel, thread);
+        p.exec();
     }
- */
 
     method Main()  {
         initProcess1();
-        //initProcess2();
+        initProcess2();
     }
 }

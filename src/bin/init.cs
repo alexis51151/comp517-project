@@ -18,39 +18,38 @@ class Init {
     var endokernel: Endokernel := new Endokernel(kernel);
     var instruction: Instruction := Instruction.Write(0, 0, 2);
     var thread: Thread := new Thread(0, 0, 0, [instruction], endokernel);
-    var p: Process := new Process(0, (0, 3), endokernel, thread);
+    var p: Process := new Process(0, {0, 1, 2, 3}, endokernel, thread);
+    p.exec();
+  }
+
+  method initProcess2()
+  {
+    var kernel: Kernel := new Kernel();
+    var endokernel: Endokernel := new Endokernel(kernel);
+    var instruction: Instruction := Instruction.Read(0, 0, 2);
+    var thread: Thread := new Thread(0, 0, 0, [instruction], endokernel);
+    var p: Process := new Process(0, {0, 1, 2, 3}, endokernel, thread);
     p.exec();
   }
 
   method Main()
   {
     initProcess1();
+    initProcess2();
   }
-}
-
-function method isWriteInstruction(i: Instruction): bool
-  decreases i
-{
-  match i
-  case Write(fd, addr, size) =>
-    true
-  case Read(addr) =>
-    false
 }
 
 method getImplementation(sc: Syscall, instructionMap: map<Instruction, Capability>, instruction: Instruction)
     returns (ret: bool)
+  ensures isWriteSyscall(sc) ==> ret == writeSpecification(sc.fd, sc.addr, sc.size, instructionMap, instruction)
+  ensures isReadSyscall(sc) ==> ret == readSpecification(sc.fd, sc.addr, sc.size, instructionMap, instruction)
   decreases sc, instructionMap, instruction
 {
   match sc
   case {:split false} Write(fd, addr, size) =>
-    if addr >= 0 {
-      ret := writeImplementation(fd, addr, size, instructionMap, instruction);
-    } else {
-      ret := false;
-    }
-  case {:split false} Read(addr) =>
-    ret := false;
+    ret := writeImplementation(fd, addr, size, instructionMap, instruction);
+  case {:split false} Read(fd, addr, size) =>
+    ret := readImplementation(fd, addr, size, instructionMap, instruction);
 }
 
 predicate isWriteSyscall(sc: Syscall)
@@ -59,38 +58,105 @@ predicate isWriteSyscall(sc: Syscall)
   match sc
   case Write(fd, addr, size) =>
     true
-  case Read(addr) =>
+  case _v0 =>
+    false
+}
+
+predicate isReadSyscall(sc: Syscall)
+  decreases sc
+{
+  match sc
+  case Read(fd, addr, size) =>
+    true
+  case _v1 =>
     false
 }
 
 method writeImplementation(fd: int, addr: int, size: int, instructionMap: map<Instruction, Capability>, instruction: Instruction)
     returns (ret: bool)
-  requires addr >= 0
+  ensures ret == writeSpecification(fd, addr, size, instructionMap, instruction)
   decreases fd, addr, size, instructionMap, instruction
 {
   ret := true;
-  if size < 0 {
+  if size < 0 || addr < 0 {
     ret := false;
-  }
-  if instruction in instructionMap {
-    var low := instructionMap[instruction].subspace.0;
-    var high := instructionMap[instruction].subspace.1;
-    if !(addr >= low && addr + size <= high) {
+  } else if instruction !in instructionMap {
+    ret := false;
+  } else {
+    var i := set i: int | addr <= i <= addr + size;
+    if !(i * instructionMap[instruction].subspace == i) {
+      ret := false;
+    } else if fd !in instructionMap[instruction].files {
       ret := false;
     }
   }
-  if instruction !in instructionMap || fd !in instructionMap[instruction].files {
+}
+
+method readImplementation(fd: int, addr: int, size: int, instructionMap: map<Instruction, Capability>, instruction: Instruction)
+    returns (ret: bool)
+  ensures ret == readSpecification(fd, addr, size, instructionMap, instruction)
+  decreases fd, addr, size, instructionMap, instruction
+{
+  ret := true;
+  if size < 0 || addr < 0 {
     ret := false;
+  } else if instruction !in instructionMap {
+    ret := false;
+  } else {
+    var i := set i: int | addr <= i <= addr + size;
+    if !(i * instructionMap[instruction].subspace == i) {
+      ret := false;
+    } else if fd !in instructionMap[instruction].files {
+      ret := false;
+    }
   }
+}
+
+function checkRangeSet(low: int, high: int, S: set<int>): bool
+  decreases low, high, S
+{
+  (set i: int | low <= i <= high) * S == set i: int | low <= i <= high
+}
+
+function writeSpecification(fd: int, addr: int, size: int, instructionMap: map<Instruction, Capability>, instruction: Instruction): bool
+  reads *
+  decreases {}, fd, addr, size, instructionMap, instruction
+{
+  if size < 0 || addr < 0 then
+    false
+  else if instruction !in instructionMap then
+    false
+  else if !checkRangeSet(addr, addr + size, instructionMap[instruction].subspace) then
+    false
+  else if fd !in instructionMap[instruction].files then
+    false
+  else
+    true
+}
+
+function readSpecification(fd: int, addr: int, size: int, instructionMap: map<Instruction, Capability>, instruction: Instruction): bool
+  reads *
+  decreases {}, fd, addr, size, instructionMap, instruction
+{
+  if size < 0 || addr < 0 then
+    false
+  else if instruction !in instructionMap then
+    false
+  else if !checkRangeSet(addr, addr + size, instructionMap[instruction].subspace) then
+    false
+  else if fd !in instructionMap[instruction].files then
+    false
+  else
+    true
 }
 
 class Process {
   var pid: int
-  var memorySpace: (int, int)
+  var memorySpace: set<int>
   var endokernel: Endokernel
   var thread: Thread
 
-  constructor (pid: int, memorySpace: (int, int), endokernel_: Endokernel, thread_: Thread)
+  constructor (pid: int, memorySpace: set<int>, endokernel_: Endokernel, thread_: Thread)
     ensures this.endokernel == old(endokernel_)
     ensures this.thread == old(thread_)
     decreases pid, memorySpace, endokernel_, thread_
@@ -150,7 +216,6 @@ class Endokernel {
   }
 
   method trapEndoprocess(instruction: Instruction, endoId: int) returns (ret: bool)
-    requires instruction.addr >= 0
     decreases instruction, endoId
   {
     ret := true;
@@ -172,11 +237,9 @@ class Endokernel {
           print ""trapEndoprocess error: unknown endoprocess\n"";
         } else {
           if instruction in syscalls {
-            if isWriteInstruction(instruction) {
-              var ret := writeImplementation(instruction.fd, instruction.addr, instruction.size, instructionMap, instruction);
-              if ret {
-                kernel.exec(syscalls[instruction]);
-              }
+            var ret := getImplementation(syscalls[instruction], instructionMap, instruction);
+            if ret {
+              kernel.exec(syscalls[instruction]);
             }
           } else {
             ret := false;
@@ -193,21 +256,22 @@ class Endokernel {
     this.nextPid := 0;
     this.capabilities := map[];
     this.endoprocesses := map[];
-    var capability: Capability := new Capability.setCapability((0, 0), [0]);
-    var instruction: Instruction := Instruction.Write(0, 0, 2);
-    this.instructionMap := map[instruction := capability];
+    var capability: Capability := new Capability.setCapability({0}, [0]);
+    var instruction1: Instruction := Instruction.Write(0, 0, 2);
+    var instruction2: Instruction := Instruction.Read(0, 0, 2);
+    this.instructionMap := map[instruction1 := capability, instruction2 := capability];
     this.kernel := kernel;
-    this.syscalls := map[Instruction.Write(0, 0, 2) := Syscall.Write(0, 0, 2), Instruction.Read(0) := Syscall.Read(0)];
+    this.syscalls := map[Instruction.Write(0, 0, 2) := Syscall.Write(0, 0, 2), Instruction.Read(0, 0, 2) := Syscall.Read(0, 0, 2)];
   }
 }
 
 class Endoprocess {
   var id: int
-  var memorySpace: (int, int)
+  var memorySpace: set<int>
   var instructions: Instruction
   var endokernel: Endokernel
 
-  constructor (id: int, memorySpace: (int, int), instructions: Instruction, endokernel: Endokernel)
+  constructor (id: int, memorySpace: set<int>, instructions: Instruction, endokernel: Endokernel)
     decreases id, memorySpace, instructions, endokernel
   {
     this.id := id;
@@ -272,23 +336,23 @@ class Thread {
   }
 }
 
-datatype Instruction = Write(fd: int, addr: int, size: int) | Read(addr: int)
+datatype Instruction = Write(fd: int, addr: int, size: int) | Read(fd: int, addr: int, size: int)
 
 class Capability {
-  var subspace: (int, int)
+  var subspace: set<int>
   var stack: seq<int>
   var files: seq<int>
   var entries: seq<string>
 
   constructor ()
   {
-    subspace := (0, 0);
+    subspace := {};
     stack := [];
     files := [];
     entries := [];
   }
 
-  constructor setCapability(subspace: (int, int), files: seq<int>)
+  constructor setCapability(subspace: set<int>, files: seq<int>)
     decreases subspace, files
   {
     this.subspace := subspace;
@@ -296,7 +360,7 @@ class Capability {
   }
 }
 
-datatype Syscall = Write(fd: int, addr: int, size: int) | Read(addr: int)
+datatype Syscall = Write(fd: int, addr: int, size: int) | Read(fd: int, addr: int, size: int)
 ")]
 
 //-----------------------------------------------------------------------------
@@ -2069,78 +2133,87 @@ namespace _module {
     }
     public void initProcess1()
     {
-      Kernel _158_kernel;
+      Kernel _253_kernel;
       Kernel _nw0 = new Kernel();
       _nw0.__ctor();
-      _158_kernel = _nw0;
-      Endokernel _159_endokernel;
+      _253_kernel = _nw0;
+      Endokernel _254_endokernel;
       Endokernel _nw1 = new Endokernel();
-      _nw1.__ctor(_158_kernel);
-      _159_endokernel = _nw1;
-      Instruction _160_instruction;
-      _160_instruction = @Instruction.create_Write(BigInteger.Zero, BigInteger.Zero, new BigInteger(2));
-      Thread _161_thread;
+      _nw1.__ctor(_253_kernel);
+      _254_endokernel = _nw1;
+      Instruction _255_instruction;
+      _255_instruction = @Instruction.create_Write(BigInteger.Zero, BigInteger.Zero, new BigInteger(2));
+      Thread _256_thread;
       Thread _nw2 = new Thread();
-      _nw2.__ctor(BigInteger.Zero, BigInteger.Zero, BigInteger.Zero, Dafny.Sequence<Instruction>.FromElements(_160_instruction), _159_endokernel);
-      _161_thread = _nw2;
-      Process _162_p;
+      _nw2.__ctor(BigInteger.Zero, BigInteger.Zero, BigInteger.Zero, Dafny.Sequence<Instruction>.FromElements(_255_instruction), _254_endokernel);
+      _256_thread = _nw2;
+      Process _257_p;
       Process _nw3 = new Process();
-      _nw3.__ctor(BigInteger.Zero, @_System.Tuple2<BigInteger, BigInteger>.create(BigInteger.Zero, new BigInteger(3)), _159_endokernel, _161_thread);
-      _162_p = _nw3;
-      (_162_p).exec();
+      _nw3.__ctor(BigInteger.Zero, Dafny.Set<BigInteger>.FromElements(BigInteger.Zero, BigInteger.One, new BigInteger(2), new BigInteger(3)), _254_endokernel, _256_thread);
+      _257_p = _nw3;
+      (_257_p).exec();
+    }
+    public void initProcess2()
+    {
+      Kernel _258_kernel;
+      Kernel _nw4 = new Kernel();
+      _nw4.__ctor();
+      _258_kernel = _nw4;
+      Endokernel _259_endokernel;
+      Endokernel _nw5 = new Endokernel();
+      _nw5.__ctor(_258_kernel);
+      _259_endokernel = _nw5;
+      Instruction _260_instruction;
+      _260_instruction = @Instruction.create_Read(BigInteger.Zero, BigInteger.Zero, new BigInteger(2));
+      Thread _261_thread;
+      Thread _nw6 = new Thread();
+      _nw6.__ctor(BigInteger.Zero, BigInteger.Zero, BigInteger.Zero, Dafny.Sequence<Instruction>.FromElements(_260_instruction), _259_endokernel);
+      _261_thread = _nw6;
+      Process _262_p;
+      Process _nw7 = new Process();
+      _nw7.__ctor(BigInteger.Zero, Dafny.Set<BigInteger>.FromElements(BigInteger.Zero, BigInteger.One, new BigInteger(2), new BigInteger(3)), _259_endokernel, _261_thread);
+      _262_p = _nw7;
+      (_262_p).exec();
     }
     public void _Main()
     {
       (this).initProcess1();
+      (this).initProcess2();
     }
     public static void _StaticMain() {
-      Init _163_b = new Init();
-      _163_b._Main();
+      Init _263_b = new Init();
+      _263_b._Main();
     }
   }
 
   public partial class __default {
-    public static bool isWriteInstruction(Instruction i) {
-      Instruction _source0 = i;
-      if (_source0.is_Write) {
-        BigInteger _164___mcc_h0 = ((Instruction_Write)_source0).fd;
-        BigInteger _165___mcc_h1 = ((Instruction_Write)_source0).addr;
-        BigInteger _166___mcc_h2 = ((Instruction_Write)_source0).size;
-        BigInteger _167_size = _166___mcc_h2;
-        BigInteger _168_addr = _165___mcc_h1;
-        BigInteger _169_fd = _164___mcc_h0;
-        return true;
-      } else {
-        BigInteger _170___mcc_h3 = ((Instruction_Read)_source0).addr;
-        BigInteger _171_addr = _170___mcc_h3;
-        return false;
-      }
-    }
     public static bool getImplementation(Syscall sc, Dafny.IMap<Instruction,Capability> instructionMap, Instruction instruction)
     {
       bool ret = false;
-      Syscall _source1 = sc;
-      if (_source1.is_Write) {
-        BigInteger _172___mcc_h0 = ((Syscall_Write)_source1).fd;
-        BigInteger _173___mcc_h1 = ((Syscall_Write)_source1).addr;
-        BigInteger _174___mcc_h2 = ((Syscall_Write)_source1).size;
+      Syscall _source0 = sc;
+      if (_source0.is_Write) {
+        BigInteger _264___mcc_h0 = ((Syscall_Write)_source0).fd;
+        BigInteger _265___mcc_h1 = ((Syscall_Write)_source0).addr;
+        BigInteger _266___mcc_h2 = ((Syscall_Write)_source0).size;
         {
-          BigInteger _175_size = _174___mcc_h2;
-          BigInteger _176_addr = _173___mcc_h1;
-          BigInteger _177_fd = _172___mcc_h0;
-          if ((_176_addr).Sign != -1) {
-            bool _out0;
-            _out0 = __default.writeImplementation(_177_fd, _176_addr, _175_size, instructionMap, instruction);
-            ret = _out0;
-          } else {
-            ret = false;
-          }
+          BigInteger _267_size = _266___mcc_h2;
+          BigInteger _268_addr = _265___mcc_h1;
+          BigInteger _269_fd = _264___mcc_h0;
+          bool _out0;
+          _out0 = __default.writeImplementation(_269_fd, _268_addr, _267_size, instructionMap, instruction);
+          ret = _out0;
         }
       } else {
-        BigInteger _178___mcc_h3 = ((Syscall_Read)_source1).addr;
+        BigInteger _270___mcc_h3 = ((Syscall_Read)_source0).fd;
+        BigInteger _271___mcc_h4 = ((Syscall_Read)_source0).addr;
+        BigInteger _272___mcc_h5 = ((Syscall_Read)_source0).size;
         {
-          BigInteger _179_addr = _178___mcc_h3;
-          ret = false;
+          BigInteger _273_size = _272___mcc_h5;
+          BigInteger _274_addr = _271___mcc_h4;
+          BigInteger _275_fd = _270___mcc_h3;
+          bool _out1;
+          _out1 = __default.readImplementation(_275_fd, _274_addr, _273_size, instructionMap, instruction);
+          ret = _out1;
         }
       }
       return ret;
@@ -2149,20 +2222,55 @@ namespace _module {
     {
       bool ret = false;
       ret = true;
-      if ((size).Sign == -1) {
+      if (((size).Sign == -1) || ((addr).Sign == -1)) {
         ret = false;
-      }
-      if ((instructionMap).Contains((instruction))) {
-        BigInteger _180_low;
-        _180_low = (Dafny.Map<Instruction, Capability>.Select(instructionMap,instruction).subspace).dtor__0;
-        BigInteger _181_high;
-        _181_high = (Dafny.Map<Instruction, Capability>.Select(instructionMap,instruction).subspace).dtor__1;
-        if (!(((addr) >= (_180_low)) && (((addr) + (size)) <= (_181_high)))) {
+      } else if (!(instructionMap).Contains((instruction))) {
+        ret = false;
+      } else {
+        Dafny.ISet<BigInteger> _276_i;
+        _276_i = Dafny.Helpers.Id<Func<BigInteger, BigInteger, Dafny.ISet<BigInteger>>>((_277_addr, _278_size) => ((System.Func<Dafny.ISet<BigInteger>>)(() => {
+          var _coll0 = new System.Collections.Generic.List<BigInteger>();
+          foreach (BigInteger _compr_0 in Dafny.Helpers.IntegerRange(_277_addr, ((_277_addr) + (_278_size)) + (BigInteger.One))) {
+            BigInteger _279_i = (BigInteger)_compr_0;
+            if (((_277_addr) <= (_279_i)) && ((_279_i) <= ((_277_addr) + (_278_size)))) {
+              _coll0.Add(_279_i);
+            }
+          }
+          return Dafny.Set<BigInteger>.FromCollection(_coll0);
+        }))())(addr, size);
+        if (!((Dafny.Set<BigInteger>.Intersect(_276_i, Dafny.Map<Instruction, Capability>.Select(instructionMap,instruction).subspace)).Equals((_276_i)))) {
+          ret = false;
+        } else if (!(Dafny.Map<Instruction, Capability>.Select(instructionMap,instruction).files).Contains((fd))) {
           ret = false;
         }
       }
-      if ((!(instructionMap).Contains((instruction))) || (!(Dafny.Map<Instruction, Capability>.Select(instructionMap,instruction).files).Contains((fd)))) {
+      return ret;
+    }
+    public static bool readImplementation(BigInteger fd, BigInteger addr, BigInteger size, Dafny.IMap<Instruction,Capability> instructionMap, Instruction instruction)
+    {
+      bool ret = false;
+      ret = true;
+      if (((size).Sign == -1) || ((addr).Sign == -1)) {
         ret = false;
+      } else if (!(instructionMap).Contains((instruction))) {
+        ret = false;
+      } else {
+        Dafny.ISet<BigInteger> _280_i;
+        _280_i = Dafny.Helpers.Id<Func<BigInteger, BigInteger, Dafny.ISet<BigInteger>>>((_281_addr, _282_size) => ((System.Func<Dafny.ISet<BigInteger>>)(() => {
+          var _coll1 = new System.Collections.Generic.List<BigInteger>();
+          foreach (BigInteger _compr_1 in Dafny.Helpers.IntegerRange(_281_addr, ((_281_addr) + (_282_size)) + (BigInteger.One))) {
+            BigInteger _283_i = (BigInteger)_compr_1;
+            if (((_281_addr) <= (_283_i)) && ((_283_i) <= ((_281_addr) + (_282_size)))) {
+              _coll1.Add(_283_i);
+            }
+          }
+          return Dafny.Set<BigInteger>.FromCollection(_coll1);
+        }))())(addr, size);
+        if (!((Dafny.Set<BigInteger>.Intersect(_280_i, Dafny.Map<Instruction, Capability>.Select(instructionMap,instruction).subspace)).Equals((_280_i)))) {
+          ret = false;
+        } else if (!(Dafny.Map<Instruction, Capability>.Select(instructionMap,instruction).files).Contains((fd))) {
+          ret = false;
+        }
       }
       return ret;
     }
@@ -2171,15 +2279,15 @@ namespace _module {
   public partial class Process {
     public Process() {
       this.pid = BigInteger.Zero;
-      this.memorySpace = _System.Tuple2<BigInteger, BigInteger>.Default(BigInteger.Zero, BigInteger.Zero);
+      this.memorySpace = Dafny.Set<BigInteger>.Empty;
       this.endokernel = default(Endokernel);
       this.thread = default(Thread);
     }
     public BigInteger pid;
-    public _System.Tuple2<BigInteger, BigInteger> memorySpace;
+    public Dafny.ISet<BigInteger> memorySpace;
     public Endokernel endokernel;
     public Thread thread;
-    public void __ctor(BigInteger pid, _System.Tuple2<BigInteger, BigInteger> memorySpace, Endokernel endokernel__, Thread thread__)
+    public void __ctor(BigInteger pid, Dafny.ISet<BigInteger> memorySpace, Endokernel endokernel__, Thread thread__)
     {
       (this).pid = pid;
       (this).memorySpace = memorySpace;
@@ -2210,9 +2318,9 @@ namespace _module {
     public Endoprocess createEndoprocess(Capability capability, Instruction instruction)
     {
       Endoprocess endoprocess = default(Endoprocess);
-      Endoprocess _nw4 = new Endoprocess();
-      _nw4.__ctor(this.nextPid, capability.subspace, instruction, this);
-      endoprocess = _nw4;
+      Endoprocess _nw8 = new Endoprocess();
+      _nw8.__ctor(this.nextPid, capability.subspace, instruction, this);
+      endoprocess = _nw8;
       (this).capabilities = Dafny.Map<Capability, Endoprocess>.Update(this.capabilities, capability, endoprocess);
       (this).endoprocesses = Dafny.Map<BigInteger, Endoprocess>.Update(this.endoprocesses, this.nextPid, endoprocess);
       (this).nextPid = (this.nextPid) + (BigInteger.One);
@@ -2223,20 +2331,20 @@ namespace _module {
       if (!(this.instructionMap).Contains((instruction))) {
         Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("trap error: no policy for this instruction\n"));
       } else {
-        Capability _182_capability;
-        _182_capability = Dafny.Map<Instruction, Capability>.Select(this.instructionMap,instruction);
-        Endoprocess _183_endoprocess = default(Endoprocess);
-        if (!(this.capabilities).Contains((_182_capability))) {
-          Endoprocess _out1;
-          _out1 = (this).createEndoprocess(_182_capability, instruction);
-          _183_endoprocess = _out1;
+        Capability _284_capability;
+        _284_capability = Dafny.Map<Instruction, Capability>.Select(this.instructionMap,instruction);
+        Endoprocess _285_endoprocess = default(Endoprocess);
+        if (!(this.capabilities).Contains((_284_capability))) {
+          Endoprocess _out2;
+          _out2 = (this).createEndoprocess(_284_capability, instruction);
+          _285_endoprocess = _out2;
         } else {
-          _183_endoprocess = Dafny.Map<Capability, Endoprocess>.Select(this.capabilities,_182_capability);
+          _285_endoprocess = Dafny.Map<Capability, Endoprocess>.Select(this.capabilities,_284_capability);
         }
         Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("Trapping instruction "));
         Dafny.Helpers.Print(instruction);
         Dafny.Helpers.Print(Dafny.Sequence<char>.FromString(" from Process in Endokernel\n"));
-        (_183_endoprocess).exec(instruction);
+        (_285_endoprocess).exec(instruction);
       }
     }
     public bool trapEndoprocess(Instruction instruction, BigInteger endoId)
@@ -2250,27 +2358,25 @@ namespace _module {
         ret = false;
         Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("trapEndoprocess error: no policy for this instruction\n"));
       } else {
-        Capability _184_capability;
-        _184_capability = Dafny.Map<Instruction, Capability>.Select(this.instructionMap,instruction);
-        if (!(this.capabilities).Contains((_184_capability))) {
+        Capability _286_capability;
+        _286_capability = Dafny.Map<Instruction, Capability>.Select(this.instructionMap,instruction);
+        if (!(this.capabilities).Contains((_286_capability))) {
           ret = false;
           Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("trapEndoprocess error: this endoprocess has not the required rights for such instruction\n"));
         } else {
-          Endoprocess _185_endoprocessExpected;
-          _185_endoprocessExpected = Dafny.Map<Capability, Endoprocess>.Select(this.capabilities,_184_capability);
+          Endoprocess _287_endoprocessExpected;
+          _287_endoprocessExpected = Dafny.Map<Capability, Endoprocess>.Select(this.capabilities,_286_capability);
           if (!(this.endoprocesses).Contains((endoId))) {
             ret = false;
             Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("trapEndoprocess error: unknown endoprocess\n"));
           } else {
             if ((this.syscalls).Contains((instruction))) {
-              if (__default.isWriteInstruction(instruction)) {
-                bool _186_ret;
-                bool _out2;
-                _out2 = __default.writeImplementation((instruction).dtor_fd, (instruction).dtor_addr, (instruction).dtor_size, this.instructionMap, instruction);
-                _186_ret = _out2;
-                if (_186_ret) {
-                  (this.kernel).exec(Dafny.Map<Instruction, Syscall>.Select(this.syscalls,instruction));
-                }
+              bool _288_ret;
+              bool _out3;
+              _out3 = __default.getImplementation(Dafny.Map<Instruction, Syscall>.Select(this.syscalls,instruction), this.instructionMap, instruction);
+              _288_ret = _out3;
+              if (_288_ret) {
+                (this.kernel).exec(Dafny.Map<Instruction, Syscall>.Select(this.syscalls,instruction));
               }
             } else {
               ret = false;
@@ -2286,30 +2392,32 @@ namespace _module {
       (this).nextPid = BigInteger.Zero;
       (this).capabilities = Dafny.Map<Capability, Endoprocess>.FromElements();
       (this).endoprocesses = Dafny.Map<BigInteger, Endoprocess>.FromElements();
-      Capability _187_capability;
-      Capability _nw5 = new Capability();
-      _nw5.setCapability(@_System.Tuple2<BigInteger, BigInteger>.create(BigInteger.Zero, BigInteger.Zero), Dafny.Sequence<BigInteger>.FromElements(BigInteger.Zero));
-      _187_capability = _nw5;
-      Instruction _188_instruction;
-      _188_instruction = @Instruction.create_Write(BigInteger.Zero, BigInteger.Zero, new BigInteger(2));
-      (this).instructionMap = Dafny.Map<Instruction, Capability>.FromElements(new Dafny.Pair<Instruction, Capability>(_188_instruction, _187_capability));
+      Capability _289_capability;
+      Capability _nw9 = new Capability();
+      _nw9.setCapability(Dafny.Set<BigInteger>.FromElements(BigInteger.Zero), Dafny.Sequence<BigInteger>.FromElements(BigInteger.Zero));
+      _289_capability = _nw9;
+      Instruction _290_instruction1;
+      _290_instruction1 = @Instruction.create_Write(BigInteger.Zero, BigInteger.Zero, new BigInteger(2));
+      Instruction _291_instruction2;
+      _291_instruction2 = @Instruction.create_Read(BigInteger.Zero, BigInteger.Zero, new BigInteger(2));
+      (this).instructionMap = Dafny.Map<Instruction, Capability>.FromElements(new Dafny.Pair<Instruction, Capability>(_290_instruction1, _289_capability), new Dafny.Pair<Instruction, Capability>(_291_instruction2, _289_capability));
       (this).kernel = kernel;
-      (this).syscalls = Dafny.Map<Instruction, Syscall>.FromElements(new Dafny.Pair<Instruction, Syscall>(@Instruction.create_Write(BigInteger.Zero, BigInteger.Zero, new BigInteger(2)), @Syscall.create_Write(BigInteger.Zero, BigInteger.Zero, new BigInteger(2))), new Dafny.Pair<Instruction, Syscall>(@Instruction.create_Read(BigInteger.Zero), @Syscall.create_Read(BigInteger.Zero)));
+      (this).syscalls = Dafny.Map<Instruction, Syscall>.FromElements(new Dafny.Pair<Instruction, Syscall>(@Instruction.create_Write(BigInteger.Zero, BigInteger.Zero, new BigInteger(2)), @Syscall.create_Write(BigInteger.Zero, BigInteger.Zero, new BigInteger(2))), new Dafny.Pair<Instruction, Syscall>(@Instruction.create_Read(BigInteger.Zero, BigInteger.Zero, new BigInteger(2)), @Syscall.create_Read(BigInteger.Zero, BigInteger.Zero, new BigInteger(2))));
     }
   }
 
   public partial class Endoprocess {
     public Endoprocess() {
       this.id = BigInteger.Zero;
-      this.memorySpace = _System.Tuple2<BigInteger, BigInteger>.Default(BigInteger.Zero, BigInteger.Zero);
+      this.memorySpace = Dafny.Set<BigInteger>.Empty;
       this.instructions = Instruction.Default();
       this.endokernel = default(Endokernel);
     }
     public BigInteger id;
-    public _System.Tuple2<BigInteger, BigInteger> memorySpace;
+    public Dafny.ISet<BigInteger> memorySpace;
     public Instruction instructions;
     public Endokernel endokernel;
-    public void __ctor(BigInteger id, _System.Tuple2<BigInteger, BigInteger> memorySpace, Instruction instructions, Endokernel endokernel)
+    public void __ctor(BigInteger id, Dafny.ISet<BigInteger> memorySpace, Instruction instructions, Endokernel endokernel)
     {
       (this).id = id;
       (this).memorySpace = memorySpace;
@@ -2321,10 +2429,10 @@ namespace _module {
       Dafny.Helpers.Print(Dafny.Sequence<char>.FromString("Executing instruction "));
       Dafny.Helpers.Print(instruction);
       Dafny.Helpers.Print(Dafny.Sequence<char>.FromString(" in Endoprocess\n"));
-      bool _189_ret;
-      bool _out3;
-      _out3 = (this.endokernel).trapEndoprocess(instruction, this.id);
-      _189_ret = _out3;
+      bool _292_ret;
+      bool _out4;
+      _out4 = (this.endokernel).trapEndoprocess(instruction, this.id);
+      _292_ret = _out4;
     }
   }
 
@@ -2388,15 +2496,16 @@ namespace _module {
     public static Instruction create_Write(BigInteger fd, BigInteger addr, BigInteger size) {
       return new Instruction_Write(fd, addr, size);
     }
-    public static Instruction create_Read(BigInteger addr) {
-      return new Instruction_Read(addr);
+    public static Instruction create_Read(BigInteger fd, BigInteger addr, BigInteger size) {
+      return new Instruction_Read(fd, addr, size);
     }
     public bool is_Write { get { return this is Instruction_Write; } }
     public bool is_Read { get { return this is Instruction_Read; } }
     public BigInteger dtor_fd {
       get {
         var d = this;
-        return ((Instruction_Write)d).fd; 
+        if (d is Instruction_Write) { return ((Instruction_Write)d).fd; }
+        return ((Instruction_Read)d).fd; 
       }
     }
     public BigInteger dtor_addr {
@@ -2409,7 +2518,8 @@ namespace _module {
     public BigInteger dtor_size {
       get {
         var d = this;
-        return ((Instruction_Write)d).size; 
+        if (d is Instruction_Write) { return ((Instruction_Write)d).size; }
+        return ((Instruction_Read)d).size; 
       }
     }
   }
@@ -2447,24 +2557,34 @@ namespace _module {
     }
   }
   public class Instruction_Read : Instruction {
+    public readonly BigInteger fd;
     public readonly BigInteger addr;
-    public Instruction_Read(BigInteger addr) {
+    public readonly BigInteger size;
+    public Instruction_Read(BigInteger fd, BigInteger addr, BigInteger size) {
+      this.fd = fd;
       this.addr = addr;
+      this.size = size;
     }
     public override bool Equals(object other) {
       var oth = other as Instruction_Read;
-      return oth != null && this.addr == oth.addr;
+      return oth != null && this.fd == oth.fd && this.addr == oth.addr && this.size == oth.size;
     }
     public override int GetHashCode() {
       ulong hash = 5381;
       hash = ((hash << 5) + hash) + 1;
+      hash = ((hash << 5) + hash) + ((ulong)Dafny.Helpers.GetHashCode(this.fd));
       hash = ((hash << 5) + hash) + ((ulong)Dafny.Helpers.GetHashCode(this.addr));
+      hash = ((hash << 5) + hash) + ((ulong)Dafny.Helpers.GetHashCode(this.size));
       return (int) hash;
     }
     public override string ToString() {
       string s = "Instruction.Read";
       s += "(";
+      s += Dafny.Helpers.ToString(this.fd);
+      s += ", ";
       s += Dafny.Helpers.ToString(this.addr);
+      s += ", ";
+      s += Dafny.Helpers.ToString(this.size);
       s += ")";
       return s;
     }
@@ -2472,23 +2592,23 @@ namespace _module {
 
   public partial class Capability {
     public Capability() {
-      this.subspace = _System.Tuple2<BigInteger, BigInteger>.Default(BigInteger.Zero, BigInteger.Zero);
+      this.subspace = Dafny.Set<BigInteger>.Empty;
       this.stack = Dafny.Sequence<BigInteger>.Empty;
       this.files = Dafny.Sequence<BigInteger>.Empty;
       this.entries = Dafny.Sequence<Dafny.ISequence<char>>.Empty;
     }
-    public _System.Tuple2<BigInteger, BigInteger> subspace;
+    public Dafny.ISet<BigInteger> subspace;
     public Dafny.ISequence<BigInteger> stack;
     public Dafny.ISequence<BigInteger> files;
     public Dafny.ISequence<Dafny.ISequence<char>> entries;
     public void __ctor()
     {
-      (this).subspace = @_System.Tuple2<BigInteger, BigInteger>.create(BigInteger.Zero, BigInteger.Zero);
+      (this).subspace = Dafny.Set<BigInteger>.FromElements();
       (this).stack = Dafny.Sequence<BigInteger>.FromElements();
       (this).files = Dafny.Sequence<BigInteger>.FromElements();
       (this).entries = Dafny.Sequence<Dafny.ISequence<char>>.FromElements();
     }
-    public void setCapability(_System.Tuple2<BigInteger, BigInteger> subspace, Dafny.ISequence<BigInteger> files)
+    public void setCapability(Dafny.ISet<BigInteger> subspace, Dafny.ISequence<BigInteger> files)
     {
       (this).subspace = subspace;
       (this).files = files;
@@ -2508,15 +2628,16 @@ namespace _module {
     public static Syscall create_Write(BigInteger fd, BigInteger addr, BigInteger size) {
       return new Syscall_Write(fd, addr, size);
     }
-    public static Syscall create_Read(BigInteger addr) {
-      return new Syscall_Read(addr);
+    public static Syscall create_Read(BigInteger fd, BigInteger addr, BigInteger size) {
+      return new Syscall_Read(fd, addr, size);
     }
     public bool is_Write { get { return this is Syscall_Write; } }
     public bool is_Read { get { return this is Syscall_Read; } }
     public BigInteger dtor_fd {
       get {
         var d = this;
-        return ((Syscall_Write)d).fd; 
+        if (d is Syscall_Write) { return ((Syscall_Write)d).fd; }
+        return ((Syscall_Read)d).fd; 
       }
     }
     public BigInteger dtor_addr {
@@ -2529,7 +2650,8 @@ namespace _module {
     public BigInteger dtor_size {
       get {
         var d = this;
-        return ((Syscall_Write)d).size; 
+        if (d is Syscall_Write) { return ((Syscall_Write)d).size; }
+        return ((Syscall_Read)d).size; 
       }
     }
   }
@@ -2567,24 +2689,34 @@ namespace _module {
     }
   }
   public class Syscall_Read : Syscall {
+    public readonly BigInteger fd;
     public readonly BigInteger addr;
-    public Syscall_Read(BigInteger addr) {
+    public readonly BigInteger size;
+    public Syscall_Read(BigInteger fd, BigInteger addr, BigInteger size) {
+      this.fd = fd;
       this.addr = addr;
+      this.size = size;
     }
     public override bool Equals(object other) {
       var oth = other as Syscall_Read;
-      return oth != null && this.addr == oth.addr;
+      return oth != null && this.fd == oth.fd && this.addr == oth.addr && this.size == oth.size;
     }
     public override int GetHashCode() {
       ulong hash = 5381;
       hash = ((hash << 5) + hash) + 1;
+      hash = ((hash << 5) + hash) + ((ulong)Dafny.Helpers.GetHashCode(this.fd));
       hash = ((hash << 5) + hash) + ((ulong)Dafny.Helpers.GetHashCode(this.addr));
+      hash = ((hash << 5) + hash) + ((ulong)Dafny.Helpers.GetHashCode(this.size));
       return (int) hash;
     }
     public override string ToString() {
       string s = "Syscall.Read";
       s += "(";
+      s += Dafny.Helpers.ToString(this.fd);
+      s += ", ";
       s += Dafny.Helpers.ToString(this.addr);
+      s += ", ";
+      s += Dafny.Helpers.ToString(this.size);
       s += ")";
       return s;
     }
