@@ -18,8 +18,10 @@ class Thread {
         this.endokernel := endokernel;
     }
 
-    method exec() modifies this, endokernel {
-        if (0 <= pc < |instructions|) {
+    method exec() modifies this, endokernel 
+    {
+        if (0 <= pc < |instructions| && instructions[pc].addr >= 0)
+        {
             print "Executing instruction ";
             print instructions[pc];
             print " in Thread\n";

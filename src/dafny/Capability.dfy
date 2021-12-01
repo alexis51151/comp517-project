@@ -1,16 +1,21 @@
 
 
 class Capability {
-    var subspace: seq<int>
+    var subspace: (int,int)
     var stack: seq<int>
-    var files: seq<string>
+    var files: seq<int>
     var entries: seq<string>
 
     constructor () {
-        subspace := [];
+        subspace := (0,0);
         stack := [];
         files := [];
         entries := [];
+    }
+
+    constructor setCapability (subspace:(int,int), files:seq<int>) {
+        this.subspace := subspace;
+        this.files := files;
     }
 
 }

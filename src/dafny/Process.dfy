@@ -3,11 +3,11 @@ include "Thread.dfy"
 
 class Process {
     var pid:int;
-    var memorySpace: seq<int>; 
+    var memorySpace: (int,int); 
     var endokernel: Endokernel;
     var thread: Thread;
 
-    constructor(pid:int, memorySpace:seq<int>, endokernel_:Endokernel, thread_:Thread)
+    constructor(pid:int, memorySpace:(int, int), endokernel_:Endokernel, thread_:Thread)
     ensures this.endokernel == old(endokernel_);
     ensures this.thread == old(thread_);
     {
